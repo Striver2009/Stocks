@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Financial Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutral Harmony -->
+    <!-- Application Structure Plan: A dashboard layout is chosen for optimal user experience. The screen is split into a main data table and a right-hand sidebar for visualizations and detailed information. This structure allows users to see the complete dataset while also being able to drill down into specifics without losing context. Key interactions include sorting the table by any column, selecting a company to view its detailed stats, and changing the metric displayed on the main comparison chart. This user flow (overview -> sort/filter -> detailed view) is intuitive for data exploration and superior to a static, non-interactive report. -->
+    <!-- Visualization & Content Choices: 
+        1. Report Info: Full dataset -> Goal: Organize/Compare -> Viz: Interactive HTML Table -> Interaction: Column sorting, row selection -> Justification: Provides a comprehensive view and allows users to rank companies by any metric. Row selection serves as the primary navigation method for the dashboard. -> Library/Method: HTML/Tailwind + JS.
+        2. Report Info: Key comparable metrics (Market Cap, P/E, ROCE etc.) -> Goal: Compare -> Viz: Bar Chart -> Interaction: Dynamically updates based on dropdown selection; highlights bar for selected company. -> Justification: Bar charts are ideal for comparing the magnitude of a single metric across multiple entities, making relative performance easy to grasp. -> Library/Method: Chart.js.
+        3. Report Info: All data for a single company -> Goal: Inform -> Viz: Detail Card/Spotlight -> Interaction: Populates with data of the company selected from the table. -> Justification: Presents a clean, focused view of a single entity's data, which is much easier to read than scanning a wide table row. -> Library/Method: HTML/Tailwind + JS.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #F8F9FA; }
+        .chart-container { position: relative; width: 100%; max-width: 800px; margin-left: auto; margin-right: auto; height: 350px; max-height: 40vh; }
+        .table-container { max-height: 75vh; overflow-y: auto; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        .table-sortable th { cursor: pointer; }
+        .table-sortable th:hover { background-color: #e9ecef; }
+        .table-row-clickable tbody tr { cursor: pointer; }
+        .table-row-clickable tbody tr:hover { background-color: #f1f1f1; }
+        .table-row-selected { background-color: #D6EAF8 !important; }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Financial Snapshot</h1>
+            <p class="text-md text-gray-600 mt-2">An interactive dashboard to compare and analyze key company metrics.</p>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+            
+            <!-- Left Side: Table -->
+            <div class="lg:col-span-3 bg-white p-4 sm:p-6 rounded-xl shadow-lg">
+                <div class="flex flex-col md:flex-row justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-gray-800 mb-2 md:mb-0">Company Data Overview</h2>
+                </div>
+                 <p class="text-sm text-gray-600 mb-4">
+                    This section displays the core financial data. Click on any column header to sort the table by that metric. Click on any company row to see its detailed stats and highlight it in the chart.
+                </p>
+                <div class="overflow-x-auto table-container">
+                    <table class="min-w-full divide-y divide-gray-200 table-sortable table-row-clickable">
+                        <thead class="bg-gray-50">
+                            <tr id="table-headers">
+                                <!-- Headers will be dynamically generated -->
+                            </tr>
+                        </thead>
+                        <tbody id="company-table-body" class="bg-white divide-y divide-gray-200">
+                            <!-- Rows will be dynamically generated -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Right Side: Chart and Details -->
+            <div class="lg:col-span-2 flex flex-col gap-8">
+                <div class="bg-white p-4 sm:p-6 rounded-xl shadow-lg">
+                     <div class="flex flex-col md:flex-row justify-between items-center mb-4">
+                        <h2 id="chart-title" class="text-xl font-bold text-gray-800 mb-2 md:mb-0">Company Comparison</h2>
+                        <select id="metric-selector" class="w-full md:w-auto p-2 border rounded-md bg-white focus:ring-2 focus:ring-blue-500">
+                            <!-- Options will be dynamically generated -->
+                        </select>
+                    </div>
+                    <p class="text-sm text-gray-600 mb-4">
+                        Use the dropdown above to select a metric for visual comparison across all companies. This chart helps in quickly identifying leaders and outliers for the chosen financial indicator.
+                    </p>
+                    <div class="chart-container">
+                        <canvas id="company-chart"></canvas>
+                    </div>
+                </div>
+
+                <div id="details-card" class="bg-white p-6 rounded-xl shadow-lg">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">Company Spotlight</h2>
+                     <p id="details-intro" class="text-sm text-gray-600 mb-4">
+                       Select a company from the table to view its detailed financial metrics here. This provides a focused snapshot of the selected company's performance and structure.
+                    </p>
+                    <div id="details-content" class="space-y-2">
+                        <!-- Details will be dynamically generated -->
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+    const companyData = [
+        { "S.No": 1, "Name": "P & G Hygiene", "CMP Rs.P/E": 13194.00, "Mar Cap Rs.Cr.": 42828.70, "Div Yld %": 1.48, "NP Qtr Rs.Cr.": 156.10, "Qtr Profit Var %": 1.12, "Sales Qtr Rs.Cr.": 991.63, "Qtr Sales Var %": -1.05, "ROCE %": 112.44, "Debt/Eq": 0.00, "Debt Rs.Cr.": 2.32, "Prom. Hold. %": 70.64, "FII Hold %": 1.33, "DII Hold %": 15.50, "Public Hold %": 12.52, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 2, "Name": "Tips Music", "CMP Rs.P/E": 650.70, "Mar Cap Rs.Cr.": 8318.00, "Div Yld %": 1.08, "NP Qtr Rs.Cr.": 30.61, "Qtr Profit Var %": 18.83, "Sales Qtr Rs.Cr.": 78.49, "Qtr Sales Var %": 24.08, "ROCE %": 108.83, "Debt/Eq": 0.02, "Debt Rs.Cr.": 3.45, "Prom. Hold. %": 64.15, "FII Hold %": 8.23, "DII Hold %": 3.52, "Public Hold %": 24.10, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 3, "Name": "Colgate-Palmolive", "CMP Rs.P/E": 2376.10, "Mar Cap Rs.Cr.": 64626.51, "Div Yld %": 2.15, "NP Qtr Rs.Cr.": 355.00, "Qtr Profit Var %": -6.53, "Sales Qtr Rs.Cr.": 1462.51, "Qtr Sales Var %": -1.85, "ROCE %": 105.34, "Debt/Eq": 0.04, "Debt Rs.Cr.": 60.84, "Prom. Hold. %": 51.00, "FII Hold %": 22.23, "DII Hold %": 7.84, "Public Hold %": 18.65, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 4, "Name": "Esab India", "CMP Rs.P/E": 5241.00, "Mar Cap Rs.Cr.": 8067.48, "Div Yld %": 1.24, "NP Qtr Rs.Cr.": 47.43, "Qtr Profit Var %": 7.19, "Sales Qtr Rs.Cr.": 367.72, "Qtr Sales Var %": 7.86, "ROCE %": 70.26, "Debt/Eq": 0.01, "Debt Rs.Cr.": 3.93, "Prom. Hold. %": 73.72, "FII Hold %": 1.79, "DII Hold %": 12.87, "Public Hold %": 11.60, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 5, "Name": "GlaxoSmithKline Pharma", "CMP Rs.P/E": 3243.80, "Mar Cap Rs.Cr.": 54951.93, "Div Yld %": 1.29, "NP Qtr Rs.Cr.": 262.87, "Qtr Profit Var %": 36.37, "Sales Qtr Rs.Cr.": 974.37, "Qtr Sales Var %": 4.79, "ROCE %": 63.25, "Debt/Eq": 0.01, "Debt Rs.Cr.": 9.95, "Prom. Hold. %": 75.00, "FII Hold %": 4.52, "DII Hold %": 7.79, "Public Hold %": 12.69, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 6, "Name": "Ingersoll-Rand", "CMP Rs.P/E": 4160.70, "Mar Cap Rs.Cr.": 13134.50, "Div Yld %": 1.92, "NP Qtr Rs.Cr.": 67.66, "Qtr Profit Var %": 5.93, "Sales Qtr Rs.Cr.": 322.34, "Qtr Sales Var %": 7.91, "ROCE %": 59.98, "Debt/Eq": 0.02, "Debt Rs.Cr.": 10.54, "Prom. Hold. %": 75.00, "FII Hold %": 1.88, "DII Hold %": 7.12, "Public Hold %": 16.02, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 7, "Name": "Page Industries", "CMP Rs.P/E": 47930.00, "Mar Cap Rs.Cr.": 53460.52, "Div Yld %": 1.88, "NP Qtr Rs.Cr.": 164.01, "Qtr Profit Var %": 51.58, "Sales Qtr Rs.Cr.": 1098.07, "Qtr Sales Var %": 10.64, "ROCE %": 59.40, "Debt/Eq": 0.19, "Debt Rs.Cr.": 261.81, "Prom. Hold. %": 42.89, "FII Hold %": 23.58, "DII Hold %": 27.87, "Public Hold %": 4.92, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 8, "Name": "Gillette India", "CMP Rs.P/E": 10749.00, "Mar Cap Rs.Cr.": 35030.99, "Div Yld %": 1.04, "NP Qtr Rs.Cr.": 158.68, "Qtr Profit Var %": 60.14, "Sales Qtr Rs.Cr.": 767.47, "Qtr Sales Var %": 12.74, "ROCE %": 58.91, "Debt/Eq": 0.00, "Debt Rs.Cr.": 0.05, "Prom. Hold. %": 75.00, "FII Hold %": 4.33, "DII Hold %": 9.89, "Public Hold %": 10.78, "Pledged %": 0.00, "Piotroski Scr": 9.00 },
+        { "S.No": 9, "Name": "Swaraj Engines", "CMP Rs.P/E": 4098.40, "Mar Cap Rs.Cr.": 4978.52, "Div Yld %": 2.55, "NP Qtr Rs.Cr.": 45.42, "Qtr Profit Var %": 29.11, "Sales Qtr Rs.Cr.": 454.16, "Qtr Sales Var %": 29.41, "ROCE %": 56.21, "Debt/Eq": 0.00, "Debt Rs.Cr.": 1.99, "Prom. Hold. %": 52.12, "FII Hold %": 3.47, "DII Hold %": 9.89, "Public Hold %": 34.51, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 10, "Name": "Shakti Pumps", "CMP Rs.P/E": 919.40, "Mar Cap Rs.Cr.": 11345.21, "Div Yld %": 0.07, "NP Qtr Rs.Cr.": 110.23, "Qtr Profit Var %": 22.93, "Sales Qtr Rs.Cr.": 665.32, "Qtr Sales Var %": 9.20, "ROCE %": 55.31, "Debt/Eq": 0.14, "Debt Rs.Cr.": 168.05, "Prom. Hold. %": 50.27, "FII Hold %": 5.72, "DII Hold %": 6.42, "Public Hold %": 37.58, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 11, "Name": "Castrol India", "CMP Rs.P/E": 219.89, "Mar Cap Rs.Cr.": 21749.81, "Div Yld %": 3.87, "NP Qtr Rs.Cr.": 233.46, "Qtr Profit Var %": 7.96, "Sales Qtr Rs.Cr.": 1422.00, "Qtr Sales Var %": 7.30, "ROCE %": 55.16, "Debt/Eq": 0.04, "Debt Rs.Cr.": 82.02, "Prom. Hold. %": 51.00, "FII Hold %": 10.64, "DII Hold %": 14.57, "Public Hold %": 23.79, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 12, "Name": "Cams Services", "CMP Rs.P/E": 4069.60, "Mar Cap Rs.Cr.": 20120.13, "Div Yld %": 1.52, "NP Qtr Rs.Cr.": 106.08, "Qtr Profit Var %": 9.41, "Sales Qtr Rs.Cr.": 336.44, "Qtr Sales Var %": 17.20, "ROCE %": 54.75, "Debt/Eq": 0.07, "Debt Rs.Cr.": 73.00, "Prom. Hold. %": 0.00, "FII Hold %": 55.00, "DII Hold %": 16.70, "Public Hold %": 28.30, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 13, "Name": "Hyundai Motor I", "CMP Rs.P/E": 2103.60, "Mar Cap Rs.Cr.": 170926.15, "Div Yld %": 0.00, "NP Qtr Rs.Cr.": 1582.56, "Qtr Profit Var %": -4.05, "Sales Qtr Rs.Cr.": 17561.95, "Qtr Sales Var %": 2.51, "ROCE %": 54.22, "Debt/Eq": 0.05, "Debt Rs.Cr.": 847.29, "Prom. Hold. %": 82.50, "FII Hold %": 7.17, "DII Hold %": 7.00, "Public Hold %": 3.32, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 14, "Name": "GE Vernova T&D", "CMP Rs.P/E": 2332.90, "Mar Cap Rs.Cr.": 59733.90, "Div Yld %": 0.21, "NP Qtr Rs.Cr.": 186.49, "Qtr Profit Var %": 181.32, "Sales Qtr Rs.Cr.": 1152.54, "Qtr Sales Var %": 26.15, "ROCE %": 53.94, "Debt/Eq": 0.02, "Debt Rs.Cr.": 34.56, "Prom. Hold. %": 51.00, "FII Hold %": 13.04, "DII Hold %": 28.18, "Public Hold %": 7.77, "Pledged %": 0.00, "Piotroski Scr": 9.00 },
+        { "S.No": 15, "Name": "Indian Energy Ex", "CMP Rs.P/E": 206.43, "Mar Cap Rs.Cr.": 18407.21, "Div Yld %": 1.45, "NP Qtr Rs.Cr.": 111.99, "Qtr Profit Var %": 17.76, "Sales Qtr Rs.Cr.": 141.26, "Qtr Sales Var %": 16.47, "ROCE %": 53.61, "Debt/Eq": 0.01, "Debt Rs.Cr.": 6.15, "Prom. Hold. %": 0.00, "FII Hold %": 16.13, "DII Hold %": 34.15, "Public Hold %": 49.47, "Pledged %": 0.00, "Piotroski Scr": 9.00 },
+        { "S.No": 16, "Name": "Life Insurance", "CMP Rs.P/E": 922.40, "Mar Cap Rs.Cr.": 583417.79, "Div Yld %": 1.30, "NP Qtr Rs.Cr.": 19038.67, "Qtr Profit Var %": 37.55, "Sales Qtr Rs.Cr.": 243134.49, "Qtr Sales Var %": 1.85, "ROCE %": 53.48, "Debt/Eq": 0.00, "Debt Rs.Cr.": 0.99, "Prom. Hold. %": 96.50, "FII Hold %": 0.10, "DII Hold %": 1.27, "Public Hold %": 2.13, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 17, "Name": "Britannia Inds.", "CMP Rs.P/E": 5758.50, "Mar Cap Rs.Cr.": 138704.01, "Div Yld %": 1.30, "NP Qtr Rs.Cr.": 559.13, "Qtr Profit Var %": 4.20, "Sales Qtr Rs.Cr.": 4432.19, "Qtr Sales Var %": 8.92, "ROCE %": 53.01, "Debt/Eq": 0.29, "Debt Rs.Cr.": 1246.51, "Prom. Hold. %": 50.55, "FII Hold %": 15.72, "DII Hold %": 18.26, "Public Hold %": 15.48, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 18, "Name": "Sanofi India", "CMP Rs.P/E": 5911.00, "Mar Cap Rs.Cr.": 13613.03, "Div Yld %": 1.98, "NP Qtr Rs.Cr.": 119.50, "Qtr Profit Var %": 9.79, "Sales Qtr Rs.Cr.": 535.90, "Qtr Sales Var %": 4.91, "ROCE %": 49.16, "Debt/Eq": 0.02, "Debt Rs.Cr.": 19.30, "Prom. Hold. %": 60.40, "FII Hold %": 5.58, "DII Hold %": 23.02, "Public Hold %": 11.01, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 19, "Name": "Crizac", "CMP Rs.P/E": 333.98, "Mar Cap Rs.Cr.": 5844.07, "Div Yld %": 0.00, "NP Qtr Rs.Cr.": 89.61, "Qtr Profit Var %": 0, "Sales Qtr Rs.Cr.": 262.89, "Qtr Sales Var %": 0, "ROCE %": 47.87, "Debt/Eq": 0.00, "Debt Rs.Cr.": 0.08, "Prom. Hold. %": 79.94, "FII Hold %": 2.99, "DII Hold %": 7.05, "Public Hold %": 10.03, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 20, "Name": "Abbott India", "CMP Rs.P/E": 34420.00, "Mar Cap Rs.Cr.": 73142.50, "Div Yld %": 1.38, "NP Qtr Rs.Cr.": 367.04, "Qtr Profit Var %": 27.86, "Sales Qtr Rs.Cr.": 1604.59, "Qtr Sales Var %": 11.54, "ROCE %": 46.23, "Debt/Eq": 0.05, "Debt Rs.Cr.": 196.67, "Prom. Hold. %": 74.99, "FII Hold %": 0.16, "DII Hold %": 8.91, "Public Hold %": 15.94, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 21, "Name": "P & G Health Ltd", "CMP Rs.P/E": 5755.50, "Mar Cap Rs.Cr.": 9553.77, "Div Yld %": 1.39, "NP Qtr Rs.Cr.": 61.18, "Qtr Profit Var %": 31.40, "Sales Qtr Rs.Cr.": 310.99, "Qtr Sales Var %": 23.17, "ROCE %": 44.97, "Debt/Eq": 0.01, "Debt Rs.Cr.": 7.62, "Prom. Hold. %": 51.82, "FII Hold %": 6.86, "DII Hold %": 14.21, "Public Hold %": 27.11, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 22, "Name": "Triveni Turbine", "CMP Rs.P/E": 643.80, "Mar Cap Rs.Cr.": 20464.92, "Div Yld %": 0.40, "NP Qtr Rs.Cr.": 94.60, "Qtr Profit Var %": 23.55, "Sales Qtr Rs.Cr.": 538.00, "Qtr Sales Var %": 17.44, "ROCE %": 44.22, "Debt/Eq": 0.03, "Debt Rs.Cr.": 39.10, "Prom. Hold. %": 55.84, "FII Hold %": 28.00, "DII Hold %": 10.63, "Public Hold %": 5.52, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 23, "Name": "Prudent Corp.", "CMP Rs.P/E": 2640.40, "Mar Cap Rs.Cr.": 10933.02, "Div Yld %": 0.09, "NP Qtr Rs.Cr.": 51.74, "Qtr Profit Var %": 16.09, "Sales Qtr Rs.Cr.": 283.03, "Qtr Sales Var %": 18.08, "ROCE %": 44.06, "Debt/Eq": 0.05, "Debt Rs.Cr.": 30.53, "Prom. Hold. %": 55.72, "FII Hold %": 17.63, "DII Hold %": 20.71, "Public Hold %": 5.95, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 24, "Name": "Ganesh Housing", "CMP Rs.P/E": 995.70, "Mar Cap Rs.Cr.": 8302.85, "Div Yld %": 0.50, "NP Qtr Rs.Cr.": 164.90, "Qtr Profit Var %": 46.19, "Sales Qtr Rs.Cr.": 251.39, "Qtr Sales Var %": -9.17, "ROCE %": 44.02, "Debt/Eq": 0.01, "Debt Rs.Cr.": 27.42, "Prom. Hold. %": 73.06, "FII Hold %": 0.95, "DII Hold %": 0.13, "Public Hold %": 25.84, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 25, "Name": "Natl. Aluminium", "CMP Rs.P/E": 189.50, "Mar Cap Rs.Cr.": 34804.17, "Div Yld %": 4.22, "NP Qtr Rs.Cr.": 2067.23, "Qtr Profit Var %": 203.24, "Sales Qtr Rs.Cr.": 5267.83, "Qtr Sales Var %": 47.19, "ROCE %": 43.96, "Debt/Eq": 0.01, "Debt Rs.Cr.": 181.74, "Prom. Hold. %": 51.28, "FII Hold %": 15.81, "DII Hold %": 15.70, "Public Hold %": 17.21, "Pledged %": 0.00, "Piotroski Scr": 9.00 },
+        { "S.No": 26, "Name": "BSE", "CMP Rs.P/E": 2371.10, "Mar Cap Rs.Cr.": 96297.27, "Div Yld %": 0.25, "NP Qtr Rs.Cr.": 493.67, "Qtr Profit Var %": 364.43, "Sales Qtr Rs.Cr.": 916.97, "Qtr Sales Var %": 70.09, "ROCE %": 43.54, "Debt/Eq": 0.00, "Debt Rs.Cr.": 0.02, "Prom. Hold. %": 0.00, "FII Hold %": 16.78, "DII Hold %": 12.33, "Public Hold %": 48.78, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 27, "Name": "HDFC AMC", "CMP Rs.P/E": 5116.00, "Mar Cap Rs.Cr.": 109436.13, "Div Yld %": 1.76, "NP Qtr Rs.Cr.": 638.73, "Qtr Profit Var %": 18.05, "Sales Qtr Rs.Cr.": 901.22, "Qtr Sales Var %": 29.59, "ROCE %": 43.33, "Debt/Eq": 0.00, "Debt Rs.Cr.": 0.00, "Prom. Hold. %": 52.47, "FII Hold %": 20.51, "DII Hold %": 18.01, "Public Hold %": 8.99, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 28, "Name": "Mazagon Dock", "CMP Rs.P/E": 3174.50, "Mar Cap Rs.Cr.": 128052.98, "Div Yld %": 0.46, "NP Qtr Rs.Cr.": 325.29, "Qtr Profit Var %": -50.93, "Sales Qtr Rs.Cr.": 3174.41, "Qtr Sales Var %": 2.28, "ROCE %": 43.17, "Debt/Eq": 0.00, "Debt Rs.Cr.": 20.33, "Prom. Hold. %": 84.83, "FII Hold %": 2.26, "DII Hold %": 1.69, "Public Hold %": 11.21, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 29, "Name": "Multi Comm. Exc.", "CMP Rs.P/E": 8048.00, "Mar Cap Rs.Cr.": 41043.49, "Div Yld %": 0.37, "NP Qtr Rs.Cr.": 135.46, "Qtr Profit Var %": 54.16, "Sales Qtr Rs.Cr.": 291.33, "Qtr Sales Var %": 60.83, "ROCE %": 42.86, "Debt/Eq": 0.00, "Debt Rs.Cr.": 1.01, "Prom. Hold. %": 0.00, "FII Hold %": 21.80, "DII Hold %": 58.10, "Public Hold %": 19.90, "Pledged %": 0.00, "Piotroski Scr": 9.00 },
+        { "S.No": 30, "Name": "C D S L", "CMP Rs.P/E": 1688.70, "Mar Cap Rs.Cr.": 35293.83, "Div Yld %": 0.56, "NP Qtr Rs.Cr.": 100.40, "Qtr Profit Var %": -22.40, "Sales Qtr Rs.Cr.": 224.45, "Qtr Sales Var %": -6.78, "ROCE %": 41.93, "Debt/Eq": 0.00, "Debt Rs.Cr.": 2.97, "Prom. Hold. %": 15.00, "FII Hold %": 11.34, "DII Hold %": 15.41, "Public Hold %": 58.25, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 31, "Name": "Akzo Nobel", "CMP Rs.P/E": 3642.60, "Mar Cap Rs.Cr.": 16588.51, "Div Yld %": 2.75, "NP Qtr Rs.Cr.": 107.50, "Qtr Profit Var %": -1.19, "Sales Qtr Rs.Cr.": 1022.10, "Qtr Sales Var %": 5.00, "ROCE %": 41.66, "Debt/Eq": 0.05, "Debt Rs.Cr.": 62.10, "Prom. Hold. %": 74.76, "FII Hold %": 3.68, "DII Hold %": 8.49, "Public Hold %": 13.08, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 32, "Name": "KPIT Technologi.", "CMP Rs.P/E": 1268.40, "Mar Cap Rs.Cr.": 34772.40, "Div Yld %": 0.67, "NP Qtr Rs.Cr.": 244.73, "Qtr Profit Var %": 49.38, "Sales Qtr Rs.Cr.": 1528.34, "Qtr Sales Var %": 15.98, "ROCE %": 40.88, "Debt/Eq": 0.12, "Debt Rs.Cr.": 344.87, "Prom. Hold. %": 39.47, "FII Hold %": 17.17, "DII Hold %": 21.29, "Public Hold %": 21.15, "Pledged %": 0.00, "Piotroski Scr": 9.00 },
+        { "S.No": 33, "Name": "Oracle Fin.Serv.", "CMP Rs.P/E": 8636.00, "Mar Cap Rs.Cr.": 75047.48, "Div Yld %": 3.07, "NP Qtr Rs.Cr.": 643.90, "Qtr Profit Var %": 14.96, "Sales Qtr Rs.Cr.": 1716.30, "Qtr Sales Var %": 4.50, "ROCE %": 40.60, "Debt/Eq": 0.01, "Debt Rs.Cr.": 45.60, "Prom. Hold. %": 72.59, "FII Hold %": 8.74, "DII Hold %": 8.69, "Public Hold %": 9.97, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 34, "Name": "Blue Jet Health", "CMP Rs.P/E": 908.45, "Mar Cap Rs.Cr.": 15758.47, "Div Yld %": 0.11, "NP Qtr Rs.Cr.": 110.10, "Qtr Profit Var %": 177.68, "Sales Qtr Rs.Cr.": 340.45, "Qtr Sales Var %": 85.08, "ROCE %": 40.59, "Debt/Eq": 0.02, "Debt Rs.Cr.": 19.99, "Prom. Hold. %": 86.00, "FII Hold %": 1.97, "DII Hold %": 0.95, "Public Hold %": 11.08, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 35, "Name": "Action Const.Eq.", "CMP Rs.P/E": 1196.20, "Mar Cap Rs.Cr.": 14244.73, "Div Yld %": 0.17, "NP Qtr Rs.Cr.": 118.56, "Qtr Profit Var %": 20.44, "Sales Qtr Rs.Cr.": 960.99, "Qtr Sales Var %": 14.97, "ROCE %": 40.28, "Debt/Eq": 0.01, "Debt Rs.Cr.": 16.44, "Prom. Hold. %": 65.41, "FII Hold %": 11.57, "DII Hold %": 1.97, "Public Hold %": 20.97, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 36, "Name": "Dixon Technolog.", "CMP Rs.P/E": 15786.00, "Mar Cap Rs.Cr.": 95470.06, "Div Yld %": 0.03, "NP Qtr Rs.Cr.": 464.95, "Qtr Profit Var %": 138.10, "Sales Qtr Rs.Cr.": 10292.54, "Qtr Sales Var %": 120.97, "ROCE %": 39.81, "Debt/Eq": 0.22, "Debt Rs.Cr.": 670.96, "Prom. Hold. %": 32.27, "FII Hold %": 21.81, "DII Hold %": 23.07, "Public Hold %": 22.86, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 37, "Name": "Indrapr.Medical", "CMP Rs.P/E": 487.55, "Mar Cap Rs.Cr.": 4469.52, "Div Yld %": 0.92, "NP Qtr Rs.Cr.": 41.01, "Qtr Profit Var %": 31.57, "Sales Qtr Rs.Cr.": 333.75, "Qtr Sales Var %": 6.04, "ROCE %": 39.01, "Debt/Eq": 0.05, "Debt Rs.Cr.": 32.76, "Prom. Hold. %": 51.00, "FII Hold %": 2.94, "DII Hold %": 3.56, "Public Hold %": 42.50, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 38, "Name": "Bharat Electron", "CMP Rs.P/E": 409.30, "Mar Cap Rs.Cr.": 299189.25, "Div Yld %": 0.54, "NP Qtr Rs.Cr.": 2127.02, "Qtr Profit Var %": 18.39, "Sales Qtr Rs.Cr.": 9149.59, "Qtr Sales Var %": 6.84, "ROCE %": 38.99, "Debt/Eq": 0.00, "Debt Rs.Cr.": 61.23, "Prom. Hold. %": 51.14, "FII Hold %": 18.56, "DII Hold %": 20.60, "Public Hold %": 9.70, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 39, "Name": "Sharda Motor", "CMP Rs.P/E": 1056.90, "Mar Cap Rs.Cr.": 6067.42, "Div Yld %": 1.54, "NP Qtr Rs.Cr.": 82.52, "Qtr Profit Var %": -3.73, "Sales Qtr Rs.Cr.": 749.85, "Qtr Sales Var %": 6.61, "ROCE %": 38.68, "Debt/Eq": 0.05, "Debt Rs.Cr.": 51.63, "Prom. Hold. %": 64.31, "FII Hold %": 2.20, "DII Hold %": 11.72, "Public Hold %": 21.77, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 40, "Name": "A B B", "CMP Rs.P/E": 5756.50, "Mar Cap Rs.Cr.": 121985.06, "Div Yld %": 0.77, "NP Qtr Rs.Cr.": 474.63, "Qtr Profit Var %": 3.16, "Sales Qtr Rs.Cr.": 3159.56, "Qtr Sales Var %": 2.57, "ROCE %": 38.65, "Debt/Eq": 0.01, "Debt Rs.Cr.": 51.88, "Prom. Hold. %": 75.00, "FII Hold %": 10.27, "DII Hold %": 7.01, "Public Hold %": 7.70, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 41, "Name": "Infosys", "CMP Rs.P/E": 1594.90, "Mar Cap Rs.Cr.": 662564.94, "Div Yld %": 2.70, "NP Qtr Rs.Cr.": 7038.00, "Qtr Profit Var %": -11.75, "Sales Qtr Rs.Cr.": 40925.00, "Qtr Sales Var %": 7.92, "ROCE %": 37.50, "Debt/Eq": 0.09, "Debt Rs.Cr.": 8227.00, "Prom. Hold. %": 14.60, "FII Hold %": 32.89, "DII Hold %": 38.32, "Public Hold %": 13.72, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 42, "Name": "Garden Reach Sh.", "CMP Rs.P/E": 2801.60, "Mar Cap Rs.Cr.": 32092.89, "Div Yld %": 0.33, "NP Qtr Rs.Cr.": 244.25, "Qtr Profit Var %": 118.86, "Sales Qtr Rs.Cr.": 1642.04, "Qtr Sales Var %": 61.66, "ROCE %": 37.28, "Debt/Eq": 0.00, "Debt Rs.Cr.": 9.67, "Prom. Hold. %": 74.50, "FII Hold %": 3.85, "DII Hold %": 1.90, "Public Hold %": 19.76, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 43, "Name": "Symphony", "CMP Rs.P/E": 1149.30, "Mar Cap Rs.Cr.": 7925.23, "Div Yld %": 1.13, "NP Qtr Rs.Cr.": 79.00, "Qtr Profit Var %": 64.58, "Sales Qtr Rs.Cr.": 488.00, "Qtr Sales Var %": 46.99, "ROCE %": 36.80, "Debt/Eq": 0.19, "Debt Rs.Cr.": 141.67, "Prom. Hold. %": 73.43, "FII Hold %": 6.17, "DII Hold %": 8.68, "Public Hold %": 11.71, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 44, "Name": "Cummins India", "CMP Rs.P/E": 3546.40, "Mar Cap Rs.Cr.": 98306.21, "Div Yld %": 1.45, "NP Qtr Rs.Cr.": 529.50, "Qtr Profit Var %": -1.74, "Sales Qtr Rs.Cr.": 2470.38, "Qtr Sales Var %": 6.53, "ROCE %": 36.41, "Debt/Eq": 0.00, "Debt Rs.Cr.": 29.66, "Prom. Hold. %": 51.00, "FII Hold %": 17.21, "DII Hold %": 22.84, "Public Hold %": 8.85, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 45, "Name": "Bombay Burmah", "CMP Rs.P/E": 1950.60, "Mar Cap Rs.Cr.": 13609.71, "Div Yld %": 0.87, "NP Qtr Rs.Cr.": 584.78, "Qtr Profit Var %": 0.77, "Sales Qtr Rs.Cr.": 4518.82, "Qtr Sales Var %": 8.58, "ROCE %": 35.46, "Debt/Eq": 0.28, "Debt Rs.Cr.": 1574.49, "Prom. Hold. %": 74.05, "FII Hold %": 9.60, "DII Hold %": 1.47, "Public Hold %": 14.88, "Pledged %": 0.00, "Piotroski Scr": 9.00 },
+        { "S.No": 46, "Name": "Waaree Energies", "CMP Rs.P/E": 3112.10, "Mar Cap Rs.Cr.": 89405.40, "Div Yld %": 0.00, "NP Qtr Rs.Cr.": 644.46, "Qtr Profit Var %": 129.68, "Sales Qtr Rs.Cr.": 4003.93, "Qtr Sales Var %": 36.38, "ROCE %": 35.12, "Debt/Eq": 0.13, "Debt Rs.Cr.": 1198.99, "Prom. Hold. %": 64.30, "FII Hold %": 2.68, "DII Hold %": 2.86, "Public Hold %": 30.15, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 47, "Name": "IIFL Capital", "CMP Rs.P/E": 329.95, "Mar Cap Rs.Cr.": 10227.83, "Div Yld %": 0.91, "NP Qtr Rs.Cr.": 128.02, "Qtr Profit Var %": -28.87, "Sales Qtr Rs.Cr.": 537.14, "Qtr Sales Var %": -21.75, "ROCE %": 34.58, "Debt/Eq": 0.37, "Debt Rs.Cr.": 937.23, "Prom. Hold. %": 30.70, "FII Hold %": 18.98, "DII Hold %": 4.31, "Public Hold %": 46.02, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 48, "Name": "Indiamart Inter.", "CMP Rs.P/E": 2604.60, "Mar Cap Rs.Cr.": 15635.97, "Div Yld %": 1.15, "NP Qtr Rs.Cr.": 180.60, "Qtr Profit Var %": 81.33, "Sales Qtr Rs.Cr.": 355.10, "Qtr Sales Var %": 12.84, "ROCE %": 34.24, "Debt/Eq": 0.02, "Debt Rs.Cr.": 33.04, "Prom. Hold. %": 49.17, "FII Hold %": 18.95, "DII Hold %": 15.49, "Public Hold %": 16.34, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 49, "Name": "KFin Technolog.", "CMP Rs.P/E": 1273.10, "Mar Cap Rs.Cr.": 21921.23, "Div Yld %": 0.45, "NP Qtr Rs.Cr.": 85.05, "Qtr Profit Var %": 14.21, "Sales Qtr Rs.Cr.": 282.70, "Qtr Sales Var %": 23.81, "ROCE %": 34.21, "Debt/Eq": 0.03, "Debt Rs.Cr.": 46.53, "Prom. Hold. %": 32.91, "FII Hold %": 22.56, "DII Hold %": 20.37, "Public Hold %": 24.15, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 50, "Name": "Cigniti Tech.", "CMP Rs.P/E": 1758.30, "Mar Cap Rs.Cr.": 4817.21, "Div Yld %": 0.17, "NP Qtr Rs.Cr.": 73.15, "Qtr Profit Var %": 169.53, "Sales Qtr Rs.Cr.": 530.28, "Qtr Sales Var %": 16.38, "ROCE %": 34.15, "Debt/Eq": 0.03, "Debt Rs.Cr.": 27.93, "Prom. Hold. %": 55.16, "FII Hold %": 9.73, "DII Hold %": 10.59, "Public Hold %": 24.52, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 51, "Name": "Reliance Infra.", "CMP Rs.P/E": 377.75, "Mar Cap Rs.Cr.": 14963.86, "Div Yld %": 0.00, "NP Qtr Rs.Cr.": 8261.75, "Qtr Profit Var %": 1485.34, "Sales Qtr Rs.Cr.": 4108.01, "Qtr Sales Var %": -12.33, "ROCE %": 34.00, "Debt/Eq": 0.44, "Debt Rs.Cr.": 6361.02, "Prom. Hold. %": 19.05, "FII Hold %": 11.00, "DII Hold %": 1.32, "Public Hold %": 68.49, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 52, "Name": "Hind. Aeronautics", "CMP Rs.P/E": 4866.10, "Mar Cap Rs.Cr.": 325432.60, "Div Yld %": 0.82, "NP Qtr Rs.Cr.": 3976.63, "Qtr Profit Var %": -7.71, "Sales Qtr Rs.Cr.": 13699.85, "Qtr Sales Var %": -7.24, "ROCE %": 33.87, "Debt/Eq": 0.00, "Debt Rs.Cr.": 1.16, "Prom. Hold. %": 71.64, "FII Hold %": 12.08, "DII Hold %": 8.26, "Public Hold %": 7.97, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 53, "Name": "Ajax Engineering", "CMP Rs.P/E": 688.25, "Mar Cap Rs.Cr.": 7874.05, "Div Yld %": 0.00, "NP Qtr Rs.Cr.": 90.95, "Qtr Profit Var %": 3.04, "Sales Qtr Rs.Cr.": 755.75, "Qtr Sales Var %": 15.00, "ROCE %": 33.57, "Debt/Eq": 0.00, "Debt Rs.Cr.": 1.76, "Prom. Hold. %": 80.00, "FII Hold %": 5.95, "DII Hold %": 7.92, "Public Hold %": 6.14, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 54, "Name": "NBCC", "CMP Rs.P/E": 112.90, "Mar Cap Rs.Cr.": 30483.00, "Div Yld %": 0.47, "NP Qtr Rs.Cr.": 182.67, "Qtr Profit Var %": 21.36, "Sales Qtr Rs.Cr.": 4642.55, "Qtr Sales Var %": 16.17, "ROCE %": 33.48, "Debt/Eq": 0.00, "Debt Rs.Cr.": 0.40, "Prom. Hold. %": 61.75, "FII Hold %": 4.20, "DII Hold %": 8.93, "Public Hold %": 25.13, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 55, "Name": "Banco Products", "CMP Rs.P/E": 641.40, "Mar Cap Rs.Cr.": 9174.41, "Div Yld %": 1.71, "NP Qtr Rs.Cr.": 153.50, "Qtr Profit Var %": 125.21, "Sales Qtr Rs.Cr.": 874.65, "Qtr Sales Var %": 20.83, "ROCE %": 33.42, "Debt/Eq": 0.44, "Debt Rs.Cr.": 573.35, "Prom. Hold. %": 67.88, "FII Hold %": 3.88, "DII Hold %": 0.17, "Public Hold %": 28.07, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 56, "Name": "RPG LifeScience.", "CMP Rs.P/E": 2526.20, "Mar Cap Rs.Cr.": 4178.09, "Div Yld %": 0.79, "NP Qtr Rs.Cr.": 117.35, "Qtr Profit Var %": 64.27, "Sales Qtr Rs.Cr.": 143.09, "Qtr Sales Var %": 12.68, "ROCE %": 32.80, "Debt/Eq": 0.00, "Debt Rs.Cr.": 0.00, "Prom. Hold. %": 72.95, "FII Hold %": 1.46, "DII Hold %": 6.14, "Public Hold %": 19.46, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 57, "Name": "Natco Pharma", "CMP Rs.P/E": 961.80, "Mar Cap Rs.Cr.": 17226.79, "Div Yld %": 0.99, "NP Qtr Rs.Cr.": 406.00, "Qtr Profit Var %": 5.10, "Sales Qtr Rs.Cr.": 1221.00, "Qtr Sales Var %": 14.29, "ROCE %": 32.80, "Debt/Eq": 0.04, "Debt Rs.Cr.": 279.40, "Prom. Hold. %": 49.56, "FII Hold %": 17.49, "DII Hold %": 5.64, "Public Hold %": 27.30, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 58, "Name": "HCL Technologies", "CMP Rs.P/E": 1638.30, "Mar Cap Rs.Cr.": 444579.75, "Div Yld %": 3.30, "NP Qtr Rs.Cr.": 4309.00, "Qtr Profit Var %": 8.10, "Sales Qtr Rs.Cr.": 30246.00, "Qtr Sales Var %": 6.13, "ROCE %": 31.88, "Debt/Eq": 0.09, "Debt Rs.Cr.": 6276.00, "Prom. Hold. %": 60.81, "FII Hold %": 19.15, "DII Hold %": 15.44, "Public Hold %": 4.37, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 59, "Name": "Hero Motocorp", "CMP Rs.P/E": 4218.70, "Mar Cap Rs.Cr.": 84380.63, "Div Yld %": 3.91, "NP Qtr Rs.Cr.": 1168.75, "Qtr Profit Var %": 24.21, "Sales Qtr Rs.Cr.": 9969.81, "Qtr Sales Var %": 3.67, "ROCE %": 31.15, "Debt/Eq": 0.04, "Debt Rs.Cr.": 699.93, "Prom. Hold. %": 34.74, "FII Hold %": 27.43, "DII Hold %": 27.89, "Public Hold %": 9.91, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 60, "Name": "Trent", "CMP Rs.P/E": 5364.00, "Mar Cap Rs.Cr.": 190683.47, "Div Yld %": 0.09, "NP Qtr Rs.Cr.": 311.60, "Qtr Profit Var %": 18.57, "Sales Qtr Rs.Cr.": 4216.94, "Qtr Sales Var %": 27.88, "ROCE %": 30.71, "Debt/Eq": 0.41, "Debt Rs.Cr.": 2237.19, "Prom. Hold. %": 37.01, "FII Hold %": 19.65, "DII Hold %": 17.20, "Public Hold %": 26.08, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 61, "Name": "Transrail Light", "CMP Rs.P/E": 745.80, "Mar Cap Rs.Cr.": 10012.81, "Div Yld %": 0.00, "NP Qtr Rs.Cr.": 126.57, "Qtr Profit Var %": 26.93, "Sales Qtr Rs.Cr.": 1946.02, "Qtr Sales Var %": 39.76, "ROCE %": 30.58, "Debt/Eq": 0.35, "Debt Rs.Cr.": 660.59, "Prom. Hold. %": 71.12, "FII Hold %": 0.61, "DII Hold %": 14.08, "Public Hold %": 14.20, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 62, "Name": "Kingfa Science", "CMP Rs.P/E": 3471.50, "Mar Cap Rs.Cr.": 4204.15, "Div Yld %": 0.29, "NP Qtr Rs.Cr.": 41.90, "Qtr Profit Var %": 24.89, "Sales Qtr Rs.Cr.": 469.55, "Qtr Sales Var %": 16.10, "ROCE %": 30.55, "Debt/Eq": 0.06, "Debt Rs.Cr.": 43.00, "Prom. Hold. %": 74.99, "FII Hold %": 6.35, "DII Hold %": 0.17, "Public Hold %": 18.47, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 63, "Name": "Persistent Sys", "CMP Rs.P/E": 5578.50, "Mar Cap Rs.Cr.": 87247.74, "Div Yld %": 0.63, "NP Qtr Rs.Cr.": 395.76, "Qtr Profit Var %": 25.51, "Sales Qtr Rs.Cr.": 3242.11, "Qtr Sales Var %": 25.15, "ROCE %": 30.44, "Debt/Eq": 0.05, "Debt Rs.Cr.": 310.90, "Prom. Hold. %": 30.66, "FII Hold %": 24.36, "DII Hold %": 26.85, "Public Hold %": 17.28, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 64, "Name": "Pidilite Inds.", "CMP Rs.P/E": 3000.80, "Mar Cap Rs.Cr.": 152635.32, "Div Yld %": 0.67, "NP Qtr Rs.Cr.": 427.52, "Qtr Profit Var %": 25.89, "Sales Qtr Rs.Cr.": 3141.14, "Qtr Sales Var %": 8.25, "ROCE %": 29.86, "Debt/Eq": 0.05, "Debt Rs.Cr.": 454.14, "Prom. Hold. %": 69.50, "FII Hold %": 11.60, "DII Hold %": 9.43, "Public Hold %": 9.47, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 65, "Name": "Force Motors", "CMP Rs.P/E": 16421.00, "Mar Cap Rs.Cr.": 21636.74, "Div Yld %": 0.12, "NP Qtr Rs.Cr.": 434.74, "Qtr Profit Var %": 26.81, "Sales Qtr Rs.Cr.": 2356.01, "Qtr Sales Var %": 17.14, "ROCE %": 29.80, "Debt/Eq": 0.01, "Debt Rs.Cr.": 17.43, "Prom. Hold. %": 61.63, "FII Hold %": 8.36, "DII Hold %": 1.43, "Public Hold %": 28.58, "Pledged %": 0.00, "Piotroski Scr": 9.00 },
+        { "S.No": 66, "Name": "TD Power Systems", "CMP Rs.P/E": 487.95, "Mar Cap Rs.Cr.": 7620.98, "Div Yld %": 0.23, "NP Qtr Rs.Cr.": 53.02, "Qtr Profit Var %": 82.64, "Sales Qtr Rs.Cr.": 348.21, "Qtr Sales Var %": 31.95, "ROCE %": 29.75, "Debt/Eq": 0.01, "Debt Rs.Cr.": 12.22, "Prom. Hold. %": 33.22, "FII Hold %": 19.12, "DII Hold %": 24.91, "Public Hold %": 22.74, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 67, "Name": "Godfrey Phillips", "CMP Rs.P/E": 8401.50, "Mar Cap Rs.Cr.": 43682.69, "Div Yld %": 0.67, "NP Qtr Rs.Cr.": 279.61, "Qtr Profit Var %": 31.17, "Sales Qtr Rs.Cr.": 1573.39, "Qtr Sales Var %": 79.76, "ROCE %": 29.62, "Debt/Eq": 0.03, "Debt Rs.Cr.": 178.97, "Prom. Hold. %": 72.58, "FII Hold %": 9.72, "DII Hold %": 3.29, "Public Hold %": 14.36, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 68, "Name": "Concord Biotech", "CMP Rs.P/E": 1803.30, "Mar Cap Rs.Cr.": 18865.44, "Div Yld %": 0.49, "NP Qtr Rs.Cr.": 140.39, "Qtr Profit Var %": 47.75, "Sales Qtr Rs.Cr.": 429.88, "Qtr Sales Var %": 34.77, "ROCE %": 29.54, "Debt/Eq": 0.00, "Debt Rs.Cr.": 2.97, "Prom. Hold. %": 44.08, "FII Hold %": 9.35, "DII Hold %": 9.16, "Public Hold %": 37.41, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 69, "Name": "KNR Construct.", "CMP Rs.P/E": 215.38, "Mar Cap Rs.Cr.": 6057.23, "Div Yld %": 0.12, "NP Qtr Rs.Cr.": 7.60, "Qtr Profit Var %": -76.14, "Sales Qtr Rs.Cr.": 975.21, "Qtr Sales Var %": -31.03, "ROCE %": 29.18, "Debt/Eq": 0.41, "Debt Rs.Cr.": 1849.48, "Prom. Hold. %": 48.81, "FII Hold %": 6.91, "DII Hold %": 28.31, "Public Hold %": 15.96, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 70, "Name": "Gulf Oil Lubric.", "CMP Rs.P/E": 1240.90, "Mar Cap Rs.Cr.": 6118.19, "Div Yld %": 2.90, "NP Qtr Rs.Cr.": 91.62, "Qtr Profit Var %": 7.25, "Sales Qtr Rs.Cr.": 915.08, "Qtr Sales Var %": 7.30, "ROCE %": 29.14, "Debt/Eq": 0.31, "Debt Rs.Cr.": 454.68, "Prom. Hold. %": 67.14, "FII Hold %": 7.52, "DII Hold %": 9.53, "Public Hold %": 15.51, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 71, "Name": "Sonata Software", "CMP Rs.P/E": 430.05, "Mar Cap Rs.Cr.": 12059.67, "Div Yld %": 1.02, "NP Qtr Rs.Cr.": 107.53, "Qtr Profit Var %": -2.56, "Sales Qtr Rs.Cr.": 2617.20, "Qtr Sales Var %": 19.42, "ROCE %": 29.10, "Debt/Eq": 0.30, "Debt Rs.Cr.": 516.02, "Prom. Hold. %": 28.17, "FII Hold %": 10.76, "DII Hold %": 25.85, "Public Hold %": 34.21, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 72, "Name": "Dr Lal Pathlabs", "CMP Rs.P/E": 2926.50, "Mar Cap Rs.Cr.": 24516.90, "Div Yld %": 0.82, "NP Qtr Rs.Cr.": 155.50, "Qtr Profit Var %": 83.20, "Sales Qtr Rs.Cr.": 602.60, "Qtr Sales Var %": 10.49, "ROCE %": 28.88, "Debt/Eq": 0.07, "Debt Rs.Cr.": 157.43, "Prom. Hold. %": 53.91, "FII Hold %": 23.90, "DII Hold %": 15.79, "Public Hold %": 5.84, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 73, "Name": "Pokarna", "CMP Rs.P/E": 1017.30, "Mar Cap Rs.Cr.": 3154.04, "Div Yld %": 0.06, "NP Qtr Rs.Cr.": 58.90, "Qtr Profit Var %": 259.01, "Sales Qtr Rs.Cr.": 262.68, "Qtr Sales Var %": 62.56, "ROCE %": 28.82, "Debt/Eq": 0.42, "Debt Rs.Cr.": 330.34, "Prom. Hold. %": 56.66, "FII Hold %": 6.60, "DII Hold %": 15.23, "Public Hold %": 21.51, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 74, "Name": "Tilaknagar Inds.", "CMP Rs.P/E": 338.30, "Mar Cap Rs.Cr.": 6556.72, "Div Yld %": 0.15, "NP Qtr Rs.Cr.": 77.35, "Qtr Profit Var %": 95.72, "Sales Qtr Rs.Cr.": 405.81, "Qtr Sales Var %": 13.11, "ROCE %": 28.43, "Debt/Eq": 0.05, "Debt Rs.Cr.": 44.18, "Prom. Hold. %": 40.00, "FII Hold %": 15.32, "DII Hold %": 1.26, "Public Hold %": 43.42, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 75, "Name": "Dhanuka Agritech", "CMP Rs.P/E": 1624.50, "Mar Cap Rs.Cr.": 7404.20, "Div Yld %": 0.12, "NP Qtr Rs.Cr.": 75.50, "Qtr Profit Var %": 27.92, "Sales Qtr Rs.Cr.": 442.02, "Qtr Sales Var %": 20.01, "ROCE %": 28.29, "Debt/Eq": 0.05, "Debt Rs.Cr.": 74.23, "Prom. Hold. %": 70.32, "FII Hold %": 2.19, "DII Hold %": 18.06, "Public Hold %": 9.42, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 76, "Name": "Kirl.Pneumatic", "CMP Rs.P/E": 1401.60, "Mar Cap Rs.Cr.": 9098.27, "Div Yld %": 0.71, "NP Qtr Rs.Cr.": 80.65, "Qtr Profit Var %": 25.93, "Sales Qtr Rs.Cr.": 582.66, "Qtr Sales Var %": 18.92, "ROCE %": 28.27, "Debt/Eq": 0.00, "Debt Rs.Cr.": 0.52, "Prom. Hold. %": 38.85, "FII Hold %": 7.73, "DII Hold %": 29.13, "Public Hold %": 24.21, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 77, "Name": "Newgen Software", "CMP Rs.P/E": 1090.00, "Mar Cap Rs.Cr.": 15437.15, "Div Yld %": 0.46, "NP Qtr Rs.Cr.": 108.34, "Qtr Profit Var %": 2.92, "Sales Qtr Rs.Cr.": 429.89, "Qtr Sales Var %": 14.55, "ROCE %": 27.97, "Debt/Eq": 0.04, "Debt Rs.Cr.": 53.48, "Prom. Hold. %": 53.78, "FII Hold %": 19.36, "DII Hold %": 9.13, "Public Hold %": 16.72, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 78, "Name": "NIIT Learning", "CMP Rs.P/E": 344.00, "Mar Cap Rs.Cr.": 4702.01, "Div Yld %": 1.53, "NP Qtr Rs.Cr.": 48.72, "Qtr Profit Var %": -9.53, "Sales Qtr Rs.Cr.": 429.71, "Qtr Sales Var %": 7.99, "ROCE %": 27.93, "Debt/Eq": 0.08, "Debt Rs.Cr.": 102.81, "Prom. Hold. %": 34.48, "FII Hold %": 17.56, "DII Hold %": 21.88, "Public Hold %": 26.11, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 79, "Name": "Hind. Unilever", "CMP Rs.P/E": 2519.60, "Mar Cap Rs.Cr.": 592003.01, "Div Yld %": 1.71, "NP Qtr Rs.Cr.": 2475.00, "Qtr Profit Var %": 2.61, "Sales Qtr Rs.Cr.": 15670.00, "Qtr Sales Var %": 3.02, "ROCE %": 27.85, "Debt/Eq": 0.03, "Debt Rs.Cr.": 1648.00, "Prom. Hold. %": 61.90, "FII Hold %": 10.18, "DII Hold %": 15.99, "Public Hold %": 11.86, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 80, "Name": "Fiem Industries", "CMP Rs.P/E": 1913.70, "Mar Cap Rs.Cr.": 5036.79, "Div Yld %": 1.57, "NP Qtr Rs.Cr.": 58.85, "Qtr Profit Var %": 21.14, "Sales Qtr Rs.Cr.": 639.42, "Qtr Sales Var %": 14.69, "ROCE %": 27.80, "Debt/Eq": 0.02, "Debt Rs.Cr.": 22.09, "Prom. Hold. %": 58.96, "FII Hold %": 4.68, "DII Hold %": 8.51, "Public Hold %": 27.83, "Pledged %": 0.00, "Piotroski Scr": 9.00 },
+        { "S.No": 81, "Name": "Kirl. Brothers", "CMP Rs.P/E": 2193.80, "Mar Cap Rs.Cr.": 17420.73, "Div Yld %": 0.32, "NP Qtr Rs.Cr.": 137.80, "Qtr Profit Var %": -9.26, "Sales Qtr Rs.Cr.": 1281.30, "Qtr Sales Var %": 4.70, "ROCE %": 27.59, "Debt/Eq": 0.09, "Debt Rs.Cr.": 181.53, "Prom. Hold. %": 65.95, "FII Hold %": 6.10, "DII Hold %": 9.61, "Public Hold %": 18.35, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 82, "Name": "ASK Automotive", "CMP Rs.P/E": 542.35, "Mar Cap Rs.Cr.": 10692.03, "Div Yld %": 0.28, "NP Qtr Rs.Cr.": 57.61, "Qtr Profit Var %": 20.62, "Sales Qtr Rs.Cr.": 849.67, "Qtr Sales Var %": 8.58, "ROCE %": 27.58, "Debt/Eq": 0.39, "Debt Rs.Cr.": 411.96, "Prom. Hold. %": 78.95, "FII Hold %": 9.94, "DII Hold %": 4.95, "Public Hold %": 6.16, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 83, "Name": "Supriya Lifesci.", "CMP Rs.P/E": 687.65, "Mar Cap Rs.Cr.": 5534.40, "Div Yld %": 0.12, "NP Qtr Rs.Cr.": 50.38, "Qtr Profit Var %": 36.42, "Sales Qtr Rs.Cr.": 184.11, "Qtr Sales Var %": 16.39, "ROCE %": 27.45, "Debt/Eq": 0.01, "Debt Rs.Cr.": 5.38, "Prom. Hold. %": 68.30, "FII Hold %": 7.19, "DII Hold %": 4.26, "Public Hold %": 20.25, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 84, "Name": "Inventurus Knowl", "CMP Rs.P/E": 1585.20, "Mar Cap Rs.Cr.": 27197.78, "Div Yld %": 0.00, "NP Qtr Rs.Cr.": 147.80, "Qtr Profit Var %": 132.50, "Sales Qtr Rs.Cr.": 723.96, "Qtr Sales Var %": 16.78, "ROCE %": 27.22, "Debt/Eq": 0.48, "Debt Rs.Cr.": 855.62, "Prom. Hold. %": 63.72, "FII Hold %": 5.38, "DII Hold %": 4.02, "Public Hold %": 24.29, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 85, "Name": "Torrent Pharma.", "CMP Rs.P/E": 3314.20, "Mar Cap Rs.Cr.": 112162.55, "Div Yld %": 0.97, "NP Qtr Rs.Cr.": 498.00, "Qtr Profit Var %": 14.78, "Sales Qtr Rs.Cr.": 2959.00, "Qtr Sales Var %": 7.80, "ROCE %": 27.05, "Debt/Eq": 0.42, "Debt Rs.Cr.": 3202.32, "Prom. Hold. %": 68.31, "FII Hold %": 16.31, "DII Hold %": 8.25, "Public Hold %": 7.02, "Pledged %": 0.00, "Piotroski Scr": 9.00 },
+        { "S.No": 86, "Name": "J B Chemicals &", "CMP Rs.P/E": 1608.60, "Mar Cap Rs.Cr.": 25103.64, "Div Yld %": 0.76, "NP Qtr Rs.Cr.": 145.69, "Qtr Profit Var %": 15.48, "Sales Qtr Rs.Cr.": 949.48, "Qtr Sales Var %": 10.18, "ROCE %": 26.62, "Debt/Eq": 0.01, "Debt Rs.Cr.": 21.53, "Prom. Hold. %": 47.84, "FII Hold %": 18.30, "DII Hold %": 18.71, "Public Hold %": 15.13, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 87, "Name": "Dodla Dairy", "CMP Rs.P/E": 1420.60, "Mar Cap Rs.Cr.": 8570.17, "Div Yld %": 0.35, "NP Qtr Rs.Cr.": 67.97, "Qtr Profit Var %": 45.14, "Sales Qtr Rs.Cr.": 909.62, "Qtr Sales Var %": 15.51, "ROCE %": 26.55, "Debt/Eq": 0.03, "Debt Rs.Cr.": 42.43, "Prom. Hold. %": 59.69, "FII Hold %": 10.41, "DII Hold %": 19.14, "Public Hold %": 10.74, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 88, "Name": "Gabriel India", "CMP Rs.P/E": 1083.20, "Mar Cap Rs.Cr.": 15559.51, "Div Yld %": 0.37, "NP Qtr Rs.Cr.": 54.05, "Qtr Profit Var %": 2.54, "Sales Qtr Rs.Cr.": 930.87, "Qtr Sales Var %": 8.41, "ROCE %": 26.44, "Debt/Eq": 0.01, "Debt Rs.Cr.": 8.71, "Prom. Hold. %": 55.00, "FII Hold %": 5.23, "DII Hold %": 14.67, "Public Hold %": 25.08, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 89, "Name": "TBO Tek", "CMP Rs.P/E": 1325.30, "Mar Cap Rs.Cr.": 14391.14, "Div Yld %": 0.00, "NP Qtr Rs.Cr.": 58.91, "Qtr Profit Var %": 10.84, "Sales Qtr Rs.Cr.": 446.13, "Qtr Sales Var %": 20.88, "ROCE %": 26.35, "Debt/Eq": 0.18, "Debt Rs.Cr.": 214.18, "Prom. Hold. %": 44.41, "FII Hold %": 31.61, "DII Hold %": 17.88, "Public Hold %": 3.99, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 90, "Name": "HBL Engineering", "CMP Rs.P/E": 611.20, "Mar Cap Rs.Cr.": 16942.16, "Div Yld %": 0.08, "NP Qtr Rs.Cr.": 44.75, "Qtr Profit Var %": -53.53, "Sales Qtr Rs.Cr.": 475.58, "Qtr Sales Var %": -22.05, "ROCE %": 26.30, "Debt/Eq": 0.05, "Debt Rs.Cr.": 74.30, "Prom. Hold. %": 59.11, "FII Hold %": 4.83, "DII Hold %": 0.36, "Public Hold %": 35.70, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 91, "Name": "Blue Star", "CMP Rs.P/E": 1799.80, "Mar Cap Rs.Cr.": 37006.55, "Div Yld %": 0.50, "NP Qtr Rs.Cr.": 194.00, "Qtr Profit Var %": 21.24, "Sales Qtr Rs.Cr.": 4018.96, "Qtr Sales Var %": 20.77, "ROCE %": 26.05, "Debt/Eq": 0.12, "Debt Rs.Cr.": 381.00, "Prom. Hold. %": 36.47, "FII Hold %": 16.94, "DII Hold %": 23.13, "Public Hold %": 23.44, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 92, "Name": "Tata Technolog.", "CMP Rs.P/E": 708.80, "Mar Cap Rs.Cr.": 28753.79, "Div Yld %": 1.18, "NP Qtr Rs.Cr.": 188.87, "Qtr Profit Var %": 20.12, "Sales Qtr Rs.Cr.": 1285.65, "Qtr Sales Var %": -1.18, "ROCE %": 25.80, "Debt/Eq": 0.07, "Debt Rs.Cr.": 236.58, "Prom. Hold. %": 55.22, "FII Hold %": 3.10, "DII Hold %": 2.48, "Public Hold %": 39.20, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 93, "Name": "Petronet LNG", "CMP Rs.P/E": 299.85, "Mar Cap Rs.Cr.": 44977.50, "Div Yld %": 3.34, "NP Qtr Rs.Cr.": 1094.90, "Qtr Profit Var %": 43.23, "Sales Qtr Rs.Cr.": 12315.75, "Qtr Sales Var %": -10.71, "ROCE %": 25.57, "Debt/Eq": 0.13, "Debt Rs.Cr.": 2656.58, "Prom. Hold. %": 50.00, "FII Hold %": 28.77, "DII Hold %": 11.18, "Public Hold %": 10.05, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 94, "Name": "MSTC", "CMP Rs.P/E": 530.45, "Mar Cap Rs.Cr.": 3734.37, "Div Yld %": 7.64, "NP Qtr Rs.Cr.": 75.51, "Qtr Profit Var %": 77.21, "Sales Qtr Rs.Cr.": 88.85, "Qtr Sales Var %": -55.37, "ROCE %": 25.55, "Debt/Eq": 0.20, "Debt Rs.Cr.": 145.00, "Prom. Hold. %": 64.75, "FII Hold %": 5.47, "DII Hold %": 1.68, "Public Hold %": 28.10, "Pledged %": 0.00, "Piotroski Scr": 6.00 },
+        { "S.No": 95, "Name": "Vesuvius India", "CMP Rs.P/E": 516.90, "Mar Cap Rs.Cr.": 10491.04, "Div Yld %": 0.28, "NP Qtr Rs.Cr.": 59.31, "Qtr Profit Var %": -13.77, "Sales Qtr Rs.Cr.": 482.22, "Qtr Sales Var %": 6.37, "ROCE %": 25.47, "Debt/Eq": 0.01, "Debt Rs.Cr.": 13.39, "Prom. Hold. %": 55.57, "FII Hold %": 4.14, "DII Hold %": 20.95, "Public Hold %": 19.34, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 96, "Name": "Engineers India", "CMP Rs.P/E": 250.52, "Mar Cap Rs.Cr.": 14080.29, "Div Yld %": 1.20, "NP Qtr Rs.Cr.": 279.81, "Qtr Profit Var %": 142.22, "Sales Qtr Rs.Cr.": 1010.23, "Qtr Sales Var %": 25.47, "ROCE %": 25.42, "Debt/Eq": 0.01, "Debt Rs.Cr.": 22.14, "Prom. Hold. %": 51.32, "FII Hold %": 6.75, "DII Hold %": 10.76, "Public Hold %": 31.14, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 97, "Name": "Bhansali Engg.", "CMP Rs.P/E": 113.32, "Mar Cap Rs.Cr.": 2820.06, "Div Yld %": 3.53, "NP Qtr Rs.Cr.": 39.50, "Qtr Profit Var %": -2.28, "Sales Qtr Rs.Cr.": 344.94, "Qtr Sales Var %": 7.40, "ROCE %": 25.35, "Debt/Eq": 0.00, "Debt Rs.Cr.": 0.00, "Prom. Hold. %": 57.47, "FII Hold %": 1.53, "DII Hold %": 0.11, "Public Hold %": 40.90, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 98, "Name": "Havells India", "CMP Rs.P/E": 1527.80, "Mar Cap Rs.Cr.": 95784.16, "Div Yld %": 0.65, "NP Qtr Rs.Cr.": 517.00, "Qtr Profit Var %": 15.74, "Sales Qtr Rs.Cr.": 6543.56, "Qtr Sales Var %": 20.24, "ROCE %": 25.32, "Debt/Eq": 0.04, "Debt Rs.Cr.": 318.54, "Prom. Hold. %": 59.41, "FII Hold %": 21.59, "DII Hold %": 13.18, "Public Hold %": 5.62, "Pledged %": 0.00, "Piotroski Scr": 7.00 },
+        { "S.No": 99, "Name": "Heritage Foods", "CMP Rs.P/E": 476.45, "Mar Cap Rs.Cr.": 4421.27, "Div Yld %": 0.52, "NP Qtr Rs.Cr.": 38.17, "Qtr Profit Var %": 9.38, "Sales Qtr Rs.Cr.": 1048.47, "Qtr Sales Var %": 10.30, "ROCE %": 25.28, "Debt/Eq": 0.18, "Debt Rs.Cr.": 174.70, "Prom. Hold. %": 41.30, "FII Hold %": 6.16, "DII Hold %": 4.14, "Public Hold %": 48.41, "Pledged %": 0.00, "Piotroski Scr": 8.00 },
+        { "S.No": 100, "Name": "Sumitomo Chemi.", "CMP Rs.P/E": 542.60, "Mar Cap Rs.Cr.": 27083.65, "Div Yld %": 0.22, "NP Qtr Rs.Cr.": 98.41, "Qtr Profit Var %": -9.95, "Sales Qtr Rs.Cr.": 664.80, "Qtr Sales Var %": 0.06, "ROCE %": 25.14, "Debt/Eq": 0.02, "Debt Rs.Cr.": 44.99, "Prom. Hold. %": 75.00, "FII Hold %": 3.63, "DII Hold %": 8.13, "Public Hold %": 13.23, "Pledged %": 0.00, "Piotroski Scr": 7.00 }
+    ];
+
+    const headers = Object.keys(companyData[0]);
+    const chartableMetrics = headers.filter(h => typeof companyData[0][h] === 'number' && h !== 'S.No');
+
+    let chart;
+    let currentSort = { key: 'S.No', order: 'asc' };
+    let selectedCompany = companyData[0];
+
+    const metricSelector = document.getElementById('metric-selector');
+    const tableBody = document.getElementById('company-table-body');
+    const tableHeaders = document.getElementById('table-headers');
+    const detailsContent = document.getElementById('details-content');
+    const chartTitle = document.getElementById('chart-title');
+
+    function renderTable(data) {
+        tableBody.innerHTML = '';
+        data.forEach(company => {
+            const row = document.createElement('tr');
+            row.dataset.sno = company['S.No'];
+            if(selectedCompany && company['S.No'] === selectedCompany['S.No']) {
+                row.classList.add('table-row-selected');
+            }
+            row.innerHTML = headers.map(header => `<td class="px-4 py-3 text-sm ${typeof company[header] === 'number' ? 'text-right' : 'text-left'}">${company[header].toLocaleString('en-IN')}</td>`).join('');
+            tableBody.appendChild(row);
+        });
+    }
+
+    function renderChart(metric) {
+        const ctx = document.getElementById('company-chart').getContext('2d');
+        chartTitle.textContent = `Comparison by: ${metric}`;
+
+        const baseColors = companyData.map(() => 'rgba(54, 162, 235, 0.6)');
+        const borderColors = companyData.map(() => 'rgba(54, 162, 235, 1)');
+        
+        if(selectedCompany) {
+            const selectedIndex = companyData.findIndex(c => c['S.No'] === selectedCompany['S.No']);
+            if (selectedIndex > -1) {
+                baseColors[selectedIndex] = 'rgba(255, 99, 132, 0.6)';
+                borderColors[selectedIndex] = 'rgba(255, 99, 132, 1)';
+            }
+        }
+
+        if (chart) {
+            chart.destroy();
+        }
+
+        chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: companyData.map(c => c.Name.length > 16 ? c.Name.substring(0, 15) + '...' : c.Name),
+                datasets: [{
+                    label: metric,
+                    data: companyData.map(c => c[metric]),
+                    backgroundColor: baseColors,
+                    borderColor: borderColors,
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: false }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                         callbacks: {
+                            title: function(context) {
+                                return companyData[context[0].dataIndex].Name;
+                            },
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    label += context.parsed.y.toLocaleString('en-IN');
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function updateDetails() {
+        if (!selectedCompany) {
+            detailsContent.innerHTML = `<p class="text-gray-500">No company selected.</p>`;
+            return;
+        }
+        detailsContent.innerHTML = headers.map(key => {
+            if (key === 'Name') {
+                return `<div class="font-bold text-lg text-blue-600">${selectedCompany[key]}</div>`;
+            }
+            return `
+                <div class="flex justify-between text-sm py-1 border-b border-gray-100">
+                    <span class="text-gray-600">${key}:</span>
+                    <span class="font-semibold">${selectedCompany[key].toLocaleString('en-IN')}</span>
+                </div>
+            `;
+        }).join('');
+    }
+    
+    function sortData(key) {
+        const isNumeric = typeof companyData[0][key] === 'number';
+        if (currentSort.key === key && currentSort.order === 'asc') {
+            currentSort.order = 'desc';
+        } else {
+            currentSort.order = 'asc';
+        }
+        currentSort.key = key;
+
+        companyData.sort((a, b) => {
+            const valA = a[key];
+            const valB = b[key];
+            const order = currentSort.order === 'asc' ? 1 : -1;
+
+            if (isNumeric) return (valA - valB) * order;
+            return valA.toLocaleString('en-IN').localeCompare(valB.toLocaleString('en-IN')) * order;
+        });
+        
+        updateAll();
+    }
+    
+    function selectCompany(sno) {
+        selectedCompany = companyData.find(c => c['S.No'] == sno) || companyData[0];
+        updateAll();
+    }
+
+    function init() {
+        tableHeaders.innerHTML = headers.map(h => `<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${h}</th>`).join('');
+        
+        metricSelector.innerHTML = chartableMetrics.map(m => `<option value="${m}" ${m === 'Mar Cap Rs.Cr.' ? 'selected' : ''}>${m}</option>`).join('');
+        
+        document.querySelectorAll('#table-headers th').forEach((th, index) => {
+            th.addEventListener('click', () => sortData(headers[index]));
+        });
+
+        tableBody.addEventListener('click', (e) => {
+            const row = e.target.closest('tr');
+            if (row) {
+                selectCompany(row.dataset.sno);
+            }
+        });
+
+        metricSelector.addEventListener('change', (e) => renderChart(e.target.value));
+
+        updateAll();
+    }
+    
+    function updateAll() {
+        renderTable(companyData);
+        updateDetails();
+        renderChart(metricSelector.value);
+    }
+    
+    init();
+
+});
+</script>
+
+</body>
+</html>
